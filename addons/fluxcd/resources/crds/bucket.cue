@@ -4,8 +4,13 @@ bucketCRD: {
 	apiVersion: "apiextensions.k8s.io/v1"
 	kind:       "CustomResourceDefinition"
 	metadata: {
-		annotations: "controller-gen.kubebuilder.io/version": "v0.7.0"
-		labels: "app.kubernetes.io/instance":                 "flux-system"
+		annotations: "controller-gen.kubebuilder.io/version": "v0.12.0"
+		labels: {
+			"app.kubernetes.io/component": "source-controller"
+			"app.kubernetes.io/instance":  "flux-system"
+			"app.kubernetes.io/part-of":   "flux"
+			"app.kubernetes.io/version":   "v2.1.0"
+		}
 		name: "buckets.source.toolkit.fluxcd.io"
 	}
 	spec: {
@@ -185,9 +190,10 @@ bucketCRD: {
 								description: "Conditions holds the conditions for the Bucket."
 								items: {
 									description: """
-            		Condition contains details for one aspect of the current state of this API Resource. --- This struct is intended for direct use as an array at the field path .status.conditions.  For example, type FooStatus struct{     // Represents the observations of a foo's current state.     // Known .status.conditions.type are: \"Available\", \"Progressing\", and \"Degraded\"     // +patchMergeKey=type     // +patchStrategy=merge     // +listType=map     // +listMapKey=type     Conditions []metav1.Condition `json:\"conditions,omitempty\" patchStrategy:\"merge\" patchMergeKey:\"type\" protobuf:\"bytes,1,rep,name=conditions\"`
-            		     // other fields }
-            		"""
+			Condition contains details for one aspect of the current state of this API Resource. --- This struct is intended for direct use as an array at the field path .status.conditions.  For example, 
+			 type FooStatus struct{ // Represents the observations of a foo's current state. // Known .status.conditions.type are: \"Available\", \"Progressing\", and \"Degraded\" // +patchMergeKey=type // +patchStrategy=merge // +listType=map // +listMapKey=type Conditions []metav1.Condition `json:\"conditions,omitempty\" patchStrategy:\"merge\" patchMergeKey:\"type\" protobuf:\"bytes,1,rep,name=conditions\"` 
+			 // other fields }
+			"""
 
 									properties: {
 										lastTransitionTime: {
@@ -349,8 +355,10 @@ bucketCRD: {
 								type:        "boolean"
 							}
 							interval: {
-								description: "Interval at which to check the Endpoint for updates."
-								type:        "string"
+								description: "Interval at which the Bucket Endpoint is checked for updates. This interval is approximate and may be subject to jitter to ensure efficient use of resources."
+
+								pattern: "^([0-9]+(\\.[0-9]+)?(ms|s|m|h))+$"
+								type:    "string"
 							}
 							provider: {
 								default:     "generic"
@@ -389,6 +397,7 @@ bucketCRD: {
 							timeout: {
 								default:     "60s"
 								description: "Timeout for fetch operations, defaults to 60s."
+								pattern:     "^([0-9]+(\\.[0-9]+)?(ms|s|m))+$"
 								type:        "string"
 							}
 						}
@@ -406,8 +415,9 @@ bucketCRD: {
 							artifact: {
 								description: "Artifact represents the last successful Bucket reconciliation."
 								properties: {
-									checksum: {
-										description: "Checksum is the SHA256 checksum of the Artifact file."
+									digest: {
+										description: "Digest is the digest of the file in the form of '<algorithm>:<checksum>'."
+										pattern:     "^[a-z0-9]+(?:[.+_-][a-z0-9]+)*:[a-zA-Z0-9=_-]+$"
 										type:        "string"
 									}
 									lastUpdateTime: {
@@ -415,6 +425,11 @@ bucketCRD: {
 
 										format: "date-time"
 										type:   "string"
+									}
+									metadata: {
+										additionalProperties: type: "string"
+										description: "Metadata holds upstream information such as OCI annotations."
+										type:        "object"
 									}
 									path: {
 										description: "Path is the relative file path of the Artifact. It can be used to locate the file in the root of the Artifact storage on the local file system of the controller managing the Source."
@@ -438,7 +453,9 @@ bucketCRD: {
 									}
 								}
 								required: [
+									"lastUpdateTime",
 									"path",
+									"revision",
 									"url",
 								]
 								type: "object"
@@ -447,9 +464,10 @@ bucketCRD: {
 								description: "Conditions holds the conditions for the Bucket."
 								items: {
 									description: """
-            		Condition contains details for one aspect of the current state of this API Resource. --- This struct is intended for direct use as an array at the field path .status.conditions.  For example, type FooStatus struct{     // Represents the observations of a foo's current state.     // Known .status.conditions.type are: \"Available\", \"Progressing\", and \"Degraded\"     // +patchMergeKey=type     // +patchStrategy=merge     // +listType=map     // +listMapKey=type     Conditions []metav1.Condition `json:\"conditions,omitempty\" patchStrategy:\"merge\" patchMergeKey:\"type\" protobuf:\"bytes,1,rep,name=conditions\"`
-            		     // other fields }
-            		"""
+			Condition contains details for one aspect of the current state of this API Resource. --- This struct is intended for direct use as an array at the field path .status.conditions.  For example, 
+			 type FooStatus struct{ // Represents the observations of a foo's current state. // Known .status.conditions.type are: \"Available\", \"Progressing\", and \"Degraded\" // +patchMergeKey=type // +patchStrategy=merge // +listType=map // +listMapKey=type Conditions []metav1.Condition `json:\"conditions,omitempty\" patchStrategy:\"merge\" patchMergeKey:\"type\" protobuf:\"bytes,1,rep,name=conditions\"` 
+			 // other fields }
+			"""
 
 									properties: {
 										lastTransitionTime: {
@@ -518,6 +536,11 @@ bucketCRD: {
 								format: "int64"
 								type:   "integer"
 							}
+							observedIgnore: {
+								description: "ObservedIgnore is the observed exclusion patterns used for constructing the source artifact."
+
+								type: "string"
+							}
 							url: {
 								description: "URL is the dynamic fetch link for the latest Artifact. It is provided on a \"best effort\" basis, and using the precise BucketStatus.Artifact data is recommended."
 
@@ -533,13 +556,5 @@ bucketCRD: {
 			storage: true
 			subresources: status: {}
 		}]
-	}
-	status: {
-		acceptedNames: {
-			kind:   ""
-			plural: ""
-		}
-		conditions: []
-		storedVersions: []
 	}
 }

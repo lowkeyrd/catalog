@@ -7,16 +7,38 @@ output: {
 		name:      "kruise-rollout"
 		namespace: "vela-system"
 	}
-	spec: components: [{
-		name: "kruise-rollout"
-		type: "helm"
-		properties: {
-			repoType: "helm"
-			url:      "https://openkruise.github.io/charts/"
-			chart:    "kruise-rollout"
-			version:  "0.2.0"
-		}
-	}]
+	spec: {
+		components: [{
+			name: "kruise-rollout"
+			type: "helm"
+			properties: {
+				repoType:   "helm"
+				url:        "https://openkruise.github.io/charts/"
+				chart:      "kruise-rollout"
+				version:    "0.3.0"
+				upgradeCRD: parameter.upgradeCRD
+				values: {
+					replicaCount: 1
+					rollout: webhook: objectSelector: [{
+						key:      "kruise-rollout.oam.dev/webhook"
+						operator: "Exists"
+					}]
+				}
+			}
+		}]
+		policies: [{
+			type: "topology"
+			name: "deploy-kruise-rollout"
+			properties: {
+				if parameter.clusters != _|_ {
+					clusters: parameter.clusters
+				}
+				if parameter.clusters == _|_ {
+					clusterLabelSelector: {}
+				}
+			}
+		}]
+	}
 }
 
 outputs: resourceTree: {

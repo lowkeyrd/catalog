@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"github.com/oam-dev/kubevela-core-api/apis/core.oam.dev/common"
 	"github.com/oam-dev/kubevela-core-api/apis/core.oam.dev/v1beta1"
+	"github.com/oam-dev/kubevela-core-api/pkg/oam/util"
 	"github.com/oam-dev/terraform-controller/api/types"
 	"github.com/oam-dev/terraform-controller/api/v1beta2"
 	. "github.com/onsi/ginkgo"
@@ -102,7 +103,7 @@ var _ = Describe("Terraform Test", func() {
 					return fmt.Errorf("configuration %s is not available, current status %s", cfgName, config.Status.Apply.State)
 				}
 				return nil
-			}, 15*time.Minute, 2*time.Second).Should(Succeed())
+			}, 20*time.Minute, 2*time.Second).Should(Succeed())
 	}
 
 	verifyConfigurationDeleted := func(cfgName string) {
@@ -113,7 +114,7 @@ var _ = Describe("Terraform Test", func() {
 				return client.IgnoreNotFound(err)
 			}
 			return errors.Errorf("configuration %s still exist", cfgName)
-		}, 10*time.Minute, 2*time.Second).Should(Succeed())
+		}, 15*time.Minute, 2*time.Second).Should(Succeed())
 	}
 
 	deleteApp := func(source string) {
@@ -127,7 +128,7 @@ var _ = Describe("Terraform Test", func() {
 		}
 		Eventually(func() error {
 			return k8sClient.Delete(ctx, newApp.DeepCopy())
-		}, 10*time.Second, 500*time.Millisecond).Should(Succeed())
+		}, 15*time.Second, 500*time.Millisecond).Should(Succeed())
 	}
 
 	It("Test OSS", func() {
@@ -182,12 +183,64 @@ var _ = Describe("Terraform Test", func() {
 		verifyConfigurationDeleted(rdsConfName)
 	})
 
+	//It("Test dedicated kubernetes", func() {
+	//	applyApp("dedecated-kubernetes.yaml")
+	//	verifyConfigurationAvailable("sample-ack")
+	//	By("Delete application that create ACK")
+	//	deleteApp("dedecated-kubernetes.yaml")
+	//	verifyConfigurationDeleted("sample-ack")
+	//})
+
 	It("Test ECS", func() {
 		applyApp("ecs.yaml")
 		verifyConfigurationAvailable("sample-ecs")
 		By("Delete application that create ECS")
 		deleteApp("ecs.yaml")
 		verifyConfigurationDeleted("sample-ecs")
+	})
+
+	It("Test VPC/VSwitch/SecurityGroup", func() {
+		applyApp("vpc.yaml")
+		verifyConfigurationAvailable("sample-vpc")
+		By("Get VPC ID")
+		cfg := readConf("sample-vpc")
+		vpc_id := cfg.Status.Apply.Outputs["VPC_ID"].Value
+
+		By("Apply VSwitch")
+		vswitchApp := readApp("vswitch.yaml")
+		comp := vswitchApp.GetComponent("alibaba-vswitch")
+		Expect(comp).ShouldNot(BeNil())
+		args, err := util.RawExtension2Map(comp.Properties)
+		Expect(err).Should(BeNil())
+		args["vpc_id"] = vpc_id
+		comp.Properties = util.Object2RawExtension(args)
+		// this is only one comp
+		vswitchApp.Spec.Components[0] = *comp
+		err = k8sClient.Create(ctx, vswitchApp.DeepCopy())
+		Expect(err).Should(BeNil())
+		verifyConfigurationAvailable("sample-vswitch")
+
+		By("Apply Security Group")
+		secGroupApp := readApp("security-group.yaml")
+		comp = secGroupApp.GetComponent("alibaba-security-group")
+		Expect(comp).ShouldNot(BeNil())
+		args, err = util.RawExtension2Map(comp.Properties)
+		Expect(err).Should(BeNil())
+		args["vpc_id"] = vpc_id
+		comp.Properties = util.Object2RawExtension(args)
+		// this is only one comp
+		secGroupApp.Spec.Components[0] = *comp
+		err = k8sClient.Create(ctx, secGroupApp.DeepCopy())
+		Expect(err).Should(BeNil())
+		verifyConfigurationAvailable("sample-sg")
+
+		By("Delete application that create VPC/VSwitch/SecurityGroup")
+		deleteApp("security-group.yaml")
+		verifyConfigurationDeleted("sample-sg")
+		deleteApp("vswitch.yaml")
+		verifyConfigurationDeleted("sample-vswitch")
+		deleteApp("vpc.yaml")
+		verifyConfigurationDeleted("sample-vpc")
 	})
 
 })

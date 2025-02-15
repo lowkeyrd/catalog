@@ -36,6 +36,7 @@ import (
 	}
 	DEBUG:              strconv.FormatBool(parameter.debug)
 	DISABLE_API:        strconv.FormatBool(parameter.disableAPI)
+	CACHE_INTERVAL:     parameter.cacheRefresh
 	ALLOW_OVERWRITE:    strconv.FormatBool(parameter.allowOverwrite)
 	AUTH_ANONYMOUS_GET: strconv.FormatBool(parameter.authAnonymousGet)
 	if parameter.basicAuth != _|_ {
@@ -63,11 +64,14 @@ import (
 			if parameter.persistence.enabled {
 				pvc: [{
 					if parameter.persistence.pvcName != _|_ {
-						name:      parameter.pvcName
+						name:      parameter.persistence.pvcName
 						mountOnly: true
 					}
 					if parameter.persistence.pvcName == _|_ {
 						name: "chartmuseum-local-storage"
+						if parameter.persistence.storageClassName != _|_ {
+							storageClassName: parameter.persistence.storageClassName
+						}
 					}
 					mountPath: "/storage"
 				}]
@@ -89,6 +93,9 @@ import (
 		type:    "gateway"
 		properties: {
 			domain: parameter.ingressHost.name
+			if parameter.ingressHost.class != _|_ {
+				class: parameter.ingressHost.class
+			}
 			http: {
 				"\(parameter.ingressHost.path)": parameter.externalPort
 			}

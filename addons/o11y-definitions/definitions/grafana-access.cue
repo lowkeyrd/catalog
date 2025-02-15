@@ -1,7 +1,6 @@
 "grafana-access": {
 	alias: ""
 	annotations: {}
-	attributes: podDisruptive: false
 	description: "The access credential for grafana."
 	attributes: workload: type: "autodetects.core.oam.dev"
 	type: "component"
@@ -24,6 +23,7 @@ template: {
 		apiVersion: "o11y.prism.oam.dev/v1alpha1"
 		kind:       "Grafana"
 		metadata: name: parameter.name
+		metadata: annotations: "app.oam.dev/last-applied-configuration": "-"
 		spec: {
 			endpoint: parameter.endpoint
 			access: {

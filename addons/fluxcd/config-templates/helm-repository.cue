@@ -1,3 +1,7 @@
+import (
+	"vela/config"
+)
+
 metadata: {
 	name:        "helm-repository"
 	alias:       "Helm Repository"
@@ -29,14 +33,16 @@ template: {
 			if parameter.password != _|_ {
 				password: parameter.password
 			}
-
-		}
-		data: {
 			if parameter.caFile != _|_ {
 				caFile: parameter.caFile
 			}
 		}
 	}
+
+	validation: config.#HelmRepository & {
+		$params: parameter
+	}
+
 	parameter: {
 		// +usage=The public url of the helm chart repository.
 		url: string
@@ -44,7 +50,7 @@ template: {
 		username?: string
 		// +usage=The password of basic auth repo.
 		password?: string
-		// +usage=The ca certificate of helm repository. Please encode this data with base64.
+		// +usage=The ca certificate of helm repository. don't need base64 encode.
 		caFile?: string
 	}
 }

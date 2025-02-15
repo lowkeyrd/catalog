@@ -24,7 +24,7 @@ template: {
 				credentials: {
 					source: "Secret"
 					secretRef: {
-						namespace: "vela-system"
+						namespace: context.namespace
 						name:      context.name
 						key:       "credentials"
 					}
@@ -54,8 +54,8 @@ template: {
 	}
 
 	parameter: {
-		//+usage=The name of Terraform Provider for Alibaba Cloud, default is `default`
-		name: *"default" | string
+		//+usage=The name of Terraform Provider for Alibaba Cloud
+		name: string
 		//+usage=Get ALICLOUD_ACCESS_KEY per this guide https://help.aliyun.com/knowledge_detail/38738.html
 		ALICLOUD_ACCESS_KEY: string
 		//+usage=Get ALICLOUD_SECRET_KEY per this guide https://help.aliyun.com/knowledge_detail/38738.html

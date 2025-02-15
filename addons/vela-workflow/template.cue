@@ -4,21 +4,38 @@ output: {
 	apiVersion: "core.oam.dev/v1beta1"
 	kind:       "Application"
 	metadata: {
-		name:      const.name
 		namespace: const.namespace
 	}
 	spec: {
 		components: [
+			crd,
+			workflow,
+			additionalPrivileges,
+		]
+		policies: [
 			{
-				name: "workflow-helm"
-				type: "helm"
+				type: "shared-resource"
+				name: "shared-resource"
+				properties: rules: [{
+					selector: resourceTypes: ["CustomResourceDefinition", "ServiceAccount", "ClusterRoleBinding", "Role", "RoleBinding", "Deployment"]
+				}]
+			},
+			{
+				type: "take-over"
+				name: "take-over-resource"
+				properties: rules: [{
+					selector: resourceTypes: ["CustomResourceDefinition", "ServiceAccount", "ClusterRoleBinding", "Role", "RoleBinding", "Deployment"]
+				}]
+			},
+			{
+				type: "garbage-collect"
+				name: "not-gc-CRD"
 				properties: {
-					repoType:        "helm"
-					url:             "https://charts.kubevela.net/core"
-					chart:           "vela-workflow"
-					version:         "0.3"
-					targetNamespace: const.namespace
-					releaseName:     "vela-workflow"
+					rules: [{
+						selector: resourceTypes: ["CustomResourceDefinition"]
+						strategy: "never"
+					},
+					]
 				}
 			},
 		]

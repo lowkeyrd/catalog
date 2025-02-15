@@ -12,36 +12,8 @@ grafanaDashboardKubernetesEvents: {
 
 grafanaDashboardKubernetesEventsData: #"""
 {
-  "annotations": {
-    "list": [
-      {
-        "builtIn": 1,
-        "datasource": {
-          "type": "datasource",
-          "uid": "grafana"
-        },
-        "enable": true,
-        "hide": true,
-        "iconColor": "rgba(0, 211, 255, 1)",
-        "name": "Annotations & Alerts",
-        "target": {
-          "limit": 100,
-          "matchAny": false,
-          "tags": [],
-          "type": "dashboard"
-        },
-        "type": "dashboard"
-      }
-    ]
-  },
-  "description": "Kubernetes Events Dashboard(Loki as DataSource)",
-  "editable": true,
-  "fiscalYearStartMonth": 0,
-  "gnetId": 16967,
-  "graphTooltip": 0,
-  "id": 9,
-  "links": [],
-  "liveNow": false,
+  "description": "Kubernetes Events Dashboard (Loki as DataSource)",
+  "editable": false,
   "panels": [
     {
       "datasource": {
@@ -123,7 +95,7 @@ grafanaDashboardKubernetesEventsData: #"""
             "type": "loki",
             "uid": "${logsource}"
           },
-          "expr": "sum by (type) (count_over_time({pod=~\"^event-log.*\"}| json |  __error__=\"\" | line_format \"{{.message}}\" | __error__=\"\"  | json | __error__=\"\" [$__interval]))",
+          "expr": "sum by (type) (count_over_time({pod=~\"^event-log.*\", cluster=\"$cluster\"}| json |  __error__=\"\" | line_format \"{{.message}}\" | __error__=\"\"  | json | __error__=\"\" [$__interval]))",
           "refId": "A"
         }
       ],
@@ -229,7 +201,7 @@ grafanaDashboardKubernetesEventsData: #"""
             "type": "loki",
             "uid": "${logsource}"
           },
-          "expr": "sum(count_over_time({pod=~\"^event-log.*\"}| json |  __error__=\"\" | line_format \"{{.message}}\" | __error__=\"\"  | json | __error__=\"\" | type = \"Warning\" [$__interval]))",
+          "expr": "sum(count_over_time({pod=~\"^event-log.*\", cluster=\"$cluster\"}| json |  __error__=\"\" | line_format \"{{.message}}\" | __error__=\"\"  | json | __error__=\"\" | type = \"Warning\" [$__interval]))",
           "legendFormat": "Warning",
           "refId": "A"
         }
@@ -295,7 +267,7 @@ grafanaDashboardKubernetesEventsData: #"""
             "type": "loki",
             "uid": "${logsource}"
           },
-          "expr": "sum(count_over_time({pod=~\"^event-log.*\"}|= \"Error: ImagePullBackOff\"| json |  __error__=\"\" | line_format \"{{.message}}\" | __error__=\"\"  | json | __error__=\"\" reason = \"Failed\"| __error__=\"\"[$__interval]))",
+          "expr": "sum(count_over_time({pod=~\"^event-log.*\", cluster=\"$cluster\"}|= \"Error: ImagePullBackOff\"| json |  __error__=\"\" | line_format \"{{.message}}\" | __error__=\"\"  | json | __error__=\"\" reason = \"Failed\"| __error__=\"\"[$__interval]))",
           "refId": "A"
         }
       ],
@@ -357,7 +329,7 @@ grafanaDashboardKubernetesEventsData: #"""
             "type": "loki",
             "uid": "${logsource}"
           },
-          "expr": "sum(count_over_time({pod=~\"^event-log.*\"}| json |  __error__=\"\" | line_format \"{{.message}}\" | __error__=\"\"  | json | __error__=\"\" reason = \"BackOff\" [$__interval]))",
+          "expr": "sum(count_over_time({pod=~\"^event-log.*\", cluster=\"$cluster\"}| json |  __error__=\"\" | line_format \"{{.message}}\" | __error__=\"\"  | json | __error__=\"\" reason = \"BackOff\" [$__interval]))",
           "refId": "A"
         }
       ],
@@ -422,7 +394,7 @@ grafanaDashboardKubernetesEventsData: #"""
             "type": "loki",
             "uid": "${logsource}"
           },
-          "expr": "sum(count_over_time({pod=~\"^event-log.*\"}| json |  __error__=\"\" | line_format \"{{.message}}\" | __error__=\"\"  | json | __error__=\"\" reason = \"OOMKilling\" [$__interval]))",
+          "expr": "sum(count_over_time({pod=~\"^event-log.*\", cluster=\"$cluster\"}| json |  __error__=\"\" | line_format \"{{.message}}\" | __error__=\"\"  | json | __error__=\"\" reason = \"OOMKilling\" [$__interval]))",
           "refId": "A"
         }
       ],
@@ -487,7 +459,7 @@ grafanaDashboardKubernetesEventsData: #"""
             "type": "loki",
             "uid": "${logsource}"
           },
-          "expr": "sum(count_over_time({pod=~\"^event-log.*\"}| json |  __error__=\"\" | line_format \"{{.message}}\" | __error__=\"\"  | json | __error__=\"\" reason = \"Killing\" [$__interval]))",
+          "expr": "sum(count_over_time({pod=~\"^event-log.*\", cluster=\"$cluster\"}| json |  __error__=\"\" | line_format \"{{.message}}\" | __error__=\"\"  | json | __error__=\"\" reason = \"Killing\" [$__interval]))",
           "refId": "A"
         }
       ],
@@ -554,7 +526,7 @@ grafanaDashboardKubernetesEventsData: #"""
             "type": "loki",
             "uid": "${logsource}"
           },
-          "expr": "sum(count_over_time({pod=~\"^event-log.*\"}| json |  __error__=\"\" | line_format \"{{.message}}\" | __error__=\"\"  | json | __error__=\"\" reason = \"FailedScheduling\" [$__interval]))",
+          "expr": "sum(count_over_time({pod=~\"^event-log.*\", cluster=\"$cluster\"}| json |  __error__=\"\" | line_format \"{{.message}}\" | __error__=\"\"  | json | __error__=\"\" reason = \"FailedScheduling\" [$__interval]))",
           "refId": "A"
         }
       ],
@@ -619,7 +591,7 @@ grafanaDashboardKubernetesEventsData: #"""
             "type": "loki",
             "uid": "${logsource}"
           },
-          "expr": "sum(count_over_time({pod=~\"^event-log.*\"}| json |  __error__=\"\" | line_format \"{{.message}}\" | __error__=\"\"  | json | __error__=\"\" reason = \"TaintManagerEviction\" [$__interval]))",
+          "expr": "sum(count_over_time({pod=~\"^event-log.*\", cluster=\"$cluster\"}| json |  __error__=\"\" | line_format \"{{.message}}\" | __error__=\"\"  | json | __error__=\"\" reason = \"TaintManagerEviction\" [$__interval]))",
           "refId": "A"
         }
       ],
@@ -752,7 +724,7 @@ grafanaDashboardKubernetesEventsData: #"""
             "type": "loki",
             "uid": "${logsource}"
           },
-          "expr": "topk(10,sum by (reason) (count_over_time({pod=~\"^event-log.*\"}| json |  __error__=\"\" | line_format \"{{.message}}\" | __error__=\"\"  | json | __error__=\"\"[$__interval])))",
+          "expr": "topk(10,sum by (reason) (count_over_time({pod=~\"^event-log.*\", cluster=\"$cluster\"}| json |  __error__=\"\" | line_format \"{{.message}}\" | __error__=\"\"  | json | __error__=\"\"[$__interval])))",
           "instant": false,
           "legendFormat": "{{reason}}",
           "range": true,
@@ -825,7 +797,7 @@ grafanaDashboardKubernetesEventsData: #"""
             "type": "loki",
             "uid": "${logsource}"
           },
-          "expr": "sum(count_over_time({pod=~\"^event-log.*\"}| json |  __error__=\"\" | line_format \"{{.message}}\" | __error__=\"\"  | json | __error__=\"\"[$__interval])) by (source_component)",
+          "expr": "sum(count_over_time({pod=~\"^event-log.*\", cluster=\"$cluster\"}| json |  __error__=\"\" | line_format \"{{.message}}\" | __error__=\"\"  | json | __error__=\"\"[$__interval])) by (source_component)",
           "legendFormat": "{{source_component}}",
           "refId": "A"
         }
@@ -886,7 +858,7 @@ grafanaDashboardKubernetesEventsData: #"""
             "type": "loki",
             "uid": "${logsource}"
           },
-          "expr": "sum(count_over_time({pod=~\"^event-log.*\"}| json |  __error__=\"\" | line_format \"{{.message}}\" | __error__=\"\"  | json | __error__=\"\"[$__interval])) by (involvedObject_kind)",
+          "expr": "sum(count_over_time({pod=~\"^event-log.*\", cluster=\"$cluster\"}| json |  __error__=\"\" | line_format \"{{.message}}\" | __error__=\"\"  | json | __error__=\"\"[$__interval])) by (involvedObject_kind)",
           "legendFormat": "{{involvedObject_kind}}",
           "refId": "A"
         }
@@ -919,7 +891,7 @@ grafanaDashboardKubernetesEventsData: #"""
       "targets": [
         {
           "datasource": "${logsource}",
-          "expr": "{pod=~\"^event-log.*\"}",
+          "expr": "{pod=~\"^event-log.*\", cluster=\"$cluster\"}",
           "refId": "A"
         }
       ],
@@ -931,17 +903,13 @@ grafanaDashboardKubernetesEventsData: #"""
   "schemaVersion": 36,
   "style": "dark",
   "tags": [
-    "Loki",
-    "logging"
+	    "loki",
+	    "logging",
+	    "kubernetes"
   ],
   "templating": {
     "list": [
       {
-        "current": {
-          "selected": false,
-          "text": "loki:local",
-          "value": "loki:local"
-        },
         "hide": 2,
         "includeAll": false,
         "label": "Log Source",
@@ -953,6 +921,30 @@ grafanaDashboardKubernetesEventsData: #"""
         "regex": "",
         "skipUrlSync": false,
         "type": "datasource"
+      },
+      {
+        "current": {
+          "selected": true,
+          "text": "local",
+          "value": "local"
+        },
+        "datasource": {
+          "type": "loki",
+          "uid": "${logsource}"
+        },
+        "definition": "label_values(cluster)",
+        "hide": 0,
+        "includeAll": false,
+        "label": "cluster",
+        "multi": false,
+        "name": "cluster",
+        "options": [],
+        "query": "label_values(cluster)",
+        "refresh": 1,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 0,
+        "type": "query"
       }
     ]
   },
@@ -973,10 +965,7 @@ grafanaDashboardKubernetesEventsData: #"""
       "1d"
     ]
   },
-  "timezone": "",
   "title": "Kubernetes Events Dashboard",
-  "uid": "kubernetes-events",
-  "version": 1,
-  "weekStart": ""
+  "uid": "kubernetes-events"
 }
 """#

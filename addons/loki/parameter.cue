@@ -30,10 +30,16 @@ parameter: {
 	// agent parameters
 
 	// +usage=Specify the type of log agents, if empty, no agent will be installed
-	agent: *"" | "vector" | "promtail" | "vector-controller"
+	agent: *"vector" | "" | "promtail"
 	// +usage=Specify the image of promtail
 	promtailImage: *"grafana/promtail" | string
 	// +usage=Specify the image of vector
-	vectorImage: *"timberio/vector:0.24.0-distroless-libc" | string
+	vectorImage:           *"timberio/vector:0.25.2-distroless-libc" | string
 	vectorControllerImage: *"oamdev/vector-controller:0.2.2" | string
+	// +usage=collect all pods' stdout log
+	stdout: *"" | "all"
+	// +usage=The loki URL for vector agent to sink. If not specified, the in cluster loki endpoint will be used.
+	lokiURL?: string
+	// +usage=If set to true, only agent will be installed.
+	agentOnly: *false | bool
 }

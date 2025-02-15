@@ -20,6 +20,7 @@ import (
 	"bufio"
 	"fmt"
 	"io/ioutil"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -27,6 +28,8 @@ import (
 	"strings"
 	"unicode"
 
+	"github.com/pkg/errors"
+	"helm.sh/helm/v3/pkg/repo"
 	"sigs.k8s.io/yaml"
 )
 
@@ -43,9 +46,14 @@ var file = "addons/velaux/template.yaml"
 var pendingAddon = map[string]bool{}
 
 const (
-	regexPattern         = "^addons.*"
-	globalRexPattern     = "^.github.*|Makefile|.*.go"
-	pendingAddonFilename = "test/e2e-test/addon-test/PENDING"
+	addonPattern             = "^addons.*"
+	experimentalAddonPattern = "^experimental/addons.*"
+	testCasePattern          = "^test/e2e-test/addon-test/definition-test/testdata.*"
+	globalRexPattern         = "^.github.*|Makefile|.*.go"
+	pendingAddonFilename     = "test/e2e-test/addon-test/PENDING"
+	defTestDir               = "test/e2e-test/addon-test/definition-test/testdata/"
+	repoURL                  = "https://addons.kubevela.net"
+	experimentalRepoURL      = "https://addons.kubevela.net/experimental"
 )
 
 func main() {
@@ -54,12 +62,26 @@ func main() {
 		fmt.Fprintf(os.Stderr, "%s", err)
 		os.Exit(1)
 	}
+	if os.Getenv("LOOPCHECK") == "true" {
+		err := loopCheck()
+		if err != nil {
+			fmt.Println(err)
+			os.Exit(1)
+		}
+		os.Exit(0)
+	}
 	changedFile := os.Args[1:]
+
+	if err := checkUpgradeAddonVersion(changedFile); err != nil {
+		fmt.Fprintf(os.Stderr, "%s", err)
+		os.Exit(1)
+	}
+
 	changedAddon := determineNeedEnableAddon(changedFile)
 	if len(changedAddon) == 0 {
 		return
 	}
-	if err := enableAddonsByOrder(changedAddon); err != nil {
+	if _, err := enableAddonsByOrder("addons/%s", changedAddon, false); err != nil {
 		fmt.Fprintf(os.Stderr, "%s", err)
 		os.Exit(1)
 	}
@@ -90,101 +112,167 @@ func readPendingAddons() error {
 }
 
 // will check all needed enabled addons according to changed files.
-func determineNeedEnableAddon(changedFile []string) map[string]bool {
+func determineNeedEnableAddon(changedFile []string) []string {
+	allAddons, err := readAllAddons()
+	if err != nil {
+		panic(err)
+	}
+	addonRegex := func() string {
+		res := ""
+		for _, addon := range allAddons {
+			res += addon + "|"
+		}
+		return strings.TrimSuffix(res, "|")
+	}()
+	metaChanged := genAffectedFromChangedFiles(changedFile, addonPattern, addonRegex)
+	fmt.Printf("Changing addons: %s \n", metaChanged)
+	testAffectedAddon := genAffectedFromChangedFiles(changedFile, testCasePattern, addonRegex)
+	fmt.Printf("Changing tests of addons: %s \n", testAffectedAddon)
+
+	changedAddons := MergeSlice(true, metaChanged, testAffectedAddon)
+
+	for _, addon := range changedAddons {
+		changedAddons = MergeSlice(true, changedAddons, checkAffectedAddon(addon))
+	}
+
+	for _, addon := range changedAddons {
+		changedAddons = MergeSlice(false, changedAddons, checkAddonDependency(addon))
+	}
+
+	fmt.Printf("This PR need to test the addons: %s \n", changedAddons)
+	return changedAddons
+}
+
+func checkUpgradeAddonVersion(changedFiles []string) error {
+	filesMap := map[string]bool{}
+	for _, changedFile := range changedFiles {
+		filesMap[changedFile] = true
+	}
+	for _, changedFile := range changedFiles {
+		if !strings.HasPrefix(changedFile, "addons/") && !strings.HasPrefix(changedFile, "experimental/addons/") {
+			continue
+		}
+
+		if strings.HasPrefix(changedFile, "addons/") {
+			elem := strings.Split(changedFile, "/")
+			if len(elem) < 2 {
+				continue
+			}
+			addon := elem[1]
+			if !filesMap[filepath.Join("addons", addon, "metadata.yaml")] {
+				return fmt.Errorf("changing file: %s without upgrading the version of addon: %s", changedFile, addon)
+			}
+		}
+		if strings.HasPrefix(changedFile, "experimental/addons/") {
+			elem := strings.Split(changedFile, "/")
+			if len(elem) < 4 {
+				continue
+			}
+			addon := elem[2]
+			if !filesMap[filepath.Join("experimental", "addons", addon, "metadata.yaml")] {
+				return fmt.Errorf("changing file: %s without upgrading the version of addon: %s", changedFile, addon)
+			}
+		}
+
+	}
+	return nil
+}
+
+func genAffectedFromChangedFiles(changedFile []string, filter string, regexPattern string) []string {
 	needEnabledAddon := map[string]bool{}
+	var needEnabledAddons []string
 	globalRex := regexp.MustCompile(globalRexPattern)
 	regx := regexp.MustCompile(regexPattern)
+	filterRegex := regexp.MustCompile(filter)
 	for _, s := range changedFile {
-		regRes := regx.Find([]byte(s))
+		if len(filterRegex.FindString(s)) == 0 {
+			continue
+		}
+
+		regRes := regx.FindString(s)
 		if len(regRes) != 0 {
-			fmt.Println(string(regRes))
-			list := strings.Split(string(regRes), "/")
-			if len(list) > 1 {
-				addon := list[1]
-				needEnabledAddon[addon] = true
+			fmt.Println(regRes)
+			if needEnabledAddon[regRes] == false {
+				needEnabledAddon[regRes] = true
+				needEnabledAddons = append([]string{regRes}, needEnabledAddons...)
 			}
+			continue
 		}
 
 		// if .github/makefile/*.go files changed, that will change the CI, so enable all addons.
 		if regRes := globalRex.Find([]byte(s)); len(regRes) != 0 {
 			// change CI related file, must test all addons
-			err := putInAllAddons(needEnabledAddon)
+			all, err := readAllAddons()
 			if err != nil {
-				return nil
+				panic(err)
 			} else {
 				fmt.Println("This pr need checkAll addons")
-				return needEnabledAddon
+				return all
 			}
 		}
 	}
-
-	for addon := range needEnabledAddon {
-		if err := checkAffectedAddon(addon, needEnabledAddon); err != nil {
-			panic(err)
-		}
-	}
-
-	for addon := range needEnabledAddon {
-		checkAddonDependency(addon, needEnabledAddon)
-	}
-
-	fmt.Printf("This pr need test addons: ")
-	for ca := range needEnabledAddon {
-		fmt.Printf("%s,", ca)
-	}
-	fmt.Printf("\n")
-	return needEnabledAddon
+	return needEnabledAddons
 }
 
 // check affected addon.
 // eg: If fluxcd addon changed, should enable addons those dependent fluxcd addon.
-func checkAffectedAddon(addonName string, needEnabledAddon map[string]bool) error {
-	dir, err := ioutil.ReadDir("./addons")
+func checkAffectedAddon(addonName string) []string {
+	dir, err := os.ReadDir("./addons")
 	if err != nil {
-		return err
+		panic(err)
 	}
+	needEnabledAddonMap := make(map[string]bool)
+	var needEnabledAddon []string
 	for _, subDir := range dir {
 		if subDir.IsDir() {
 			meta, err := readAddonMeta(subDir.Name())
 			if err != nil {
-				return err
+				panic(err)
 			}
 			if len(meta.Dependencies) != 0 {
 				for _, dependency := range meta.Dependencies {
 					if dependency.Name == addonName {
-						needEnabledAddon[meta.Name] = true
+						if needEnabledAddonMap[meta.Name] == false {
+							needEnabledAddonMap[meta.Name] = true
+							needEnabledAddon = append(needEnabledAddon, meta.Name)
+						}
 					}
 				}
 			}
 		}
 	}
-	return nil
+	return needEnabledAddon
 }
 
-func putInAllAddons(addons map[string]bool) error {
-	dir, err := ioutil.ReadDir("./addons")
+func readAllAddons() ([]string, error) {
+	dir, err := os.ReadDir("./addons")
 	if err != nil {
-		return err
+		return nil, err
 	}
+	var addons []string
 	for _, subDir := range dir {
 		if subDir.IsDir() {
 			fmt.Println(subDir.Name())
-			addons[subDir.Name()] = true
+			addons = append(addons, subDir.Name())
 		}
 	}
-	return nil
+	return addons, nil
 }
 
 // these addons are depended by changed addons.
-func checkAddonDependency(addon string, changedAddon map[string]bool) {
+func checkAddonDependency(addon string) []string {
 	meta, err := readAddonMeta(addon)
 	if err != nil {
 		panic(err)
 	}
+	var deps []string
 	for _, dep := range meta.Dependencies {
-		changedAddon[dep.Name] = true
-		checkAddonDependency(dep.Name, changedAddon)
+		deps = append(deps, dep.Name)
 	}
+	for _, dep := range deps {
+		deps = MergeSlice(false, checkAddonDependency(dep), deps)
+	}
+	return deps
 }
 
 func readAddonMeta(addonName string) (*AddonMeta, error) {
@@ -202,42 +290,38 @@ func readAddonMeta(addonName string) (*AddonMeta, error) {
 
 // This func will enable addon by order rely-on addon's relationShip dependency,
 // this func is so dummy now that the order is written manually, we can generated a dependency DAG workflow in the furture.
-func enableAddonsByOrder(changedAddon map[string]bool) error {
-	dirPattern := "addons/%s"
-	// TODO: make topology sort to auto sort the order of enable
-	for _, addonName := range []string{"fluxcd", "terraform", "velaux", "cert-manager"} {
-		if changedAddon[addonName] && !pendingAddon[addonName] {
-			if err := enableOneAddon(fmt.Sprintf(dirPattern, addonName)); err != nil {
-				return err
-			}
-			changedAddon[addonName] = false
-		}
-	}
-	for s, b := range changedAddon {
-		if b && !pendingAddon[s] {
-			if err := enableOneAddon(fmt.Sprintf(dirPattern, s)); err != nil {
-				return err
-			}
-			if err := disableOneAddon(s); err != nil {
-				return err
-			}
-			switch s {
-			case "dex":
-				if err := disableOneAddon("velaux"); err != nil {
-					return err
+func enableAddonsByOrder(dirPattern string, changedAddon []string, loopCheck bool) ([]string, error) {
+	var failedAddons []string
+	for _, addon := range changedAddon {
+		fmt.Println(addon)
+		if !pendingAddon[addon] {
+			if err := enableOneAddon(fmt.Sprintf(dirPattern, addon)); err != nil {
+				if loopCheck {
+					failedAddons = append(failedAddons, addon)
+					continue
 				}
-			case "flink-kubernetes-operator":
-				if err := disableOneAddon("cert-manager"); err != nil {
-					return err
+				if err := disableOneAddon(addon); err != nil {
+					return nil, err
 				}
+				return nil, err
 			}
 		}
 	}
-	return nil
+
+	return failedAddons, nil
 }
 
 func enableOneAddon(dir string) error {
-	cmd := exec.Command("vela", "addon", "enable", dir)
+	var cmd *exec.Cmd
+	switch {
+	case strings.Contains(dir, "fluxcd"):
+		cmd = exec.Command("vela", "addon", "enable", dir, "onlyHelmComponents=true")
+	case strings.Contains(dir, "loki"):
+		cmd = exec.Command("vela", "addon", "enable", dir, "serviceType=NodePort")
+	default:
+		cmd = exec.Command("vela", "addon", "enable", dir)
+	}
+
 	fmt.Println("\033[1;32m==> " + cmd.String() + "\033[0m")
 	stdout, err := cmd.StdoutPipe()
 	cmd.Stderr = cmd.Stdout
@@ -262,6 +346,11 @@ func enableOneAddon(dir string) error {
 	if err = cmd.Wait(); err != nil {
 		checkAppStatus(dir)
 		return err
+	}
+	fmt.Printf("Enable addon %s successfully, try to test definition in the addon \n", dir)
+	err = testDefinitionsInAddons(dir)
+	if err != nil {
+		return errors.Wrap(err, fmt.Sprintf("failed tp test definition of addon %s", dir))
 	}
 	return nil
 }
@@ -352,4 +441,118 @@ func convertToString(data []byte) string {
 		}
 		return -1
 	}, string(data))
+}
+
+func testDefinitionsInAddons(addons string) error {
+	addonName := filepath.Base(addons)
+	_, err := os.Stat(defTestDir + addonName)
+	if os.IsNotExist(err) {
+		fmt.Println("There is no test cases for this addon, skip the test.")
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	cmd := exec.Command("go", "test", "-v", "test/e2e-test/addon-test/definition-test/suit_test.go")
+	fmt.Println(cmd.String())
+	cmd.Env = os.Environ()
+	cmd.Env = append(cmd.Env, fmt.Sprintf("AFFECTED_ADDONS=%s", addons))
+	stdout, err := cmd.StdoutPipe()
+	cmd.Stderr = cmd.Stdout
+	if err != nil {
+		panic(err)
+	}
+	if err = cmd.Start(); err != nil {
+		fmt.Println(err)
+	}
+	for {
+		tmp := make([]byte, 4096)
+		_, err := stdout.Read(tmp)
+		fmt.Print(string(tmp))
+		if err != nil {
+			break
+		}
+	}
+	if err = cmd.Wait(); err != nil {
+		fmt.Println(err)
+		return err
+	}
+	return nil
+}
+
+// logic below is about loop check
+func loopCheck() error {
+	fmt.Println("Begin the process of loop check addon")
+	addons, err := calculateAddonsNameFromRepoUrl(repoURL)
+	if err != nil {
+		return err
+	}
+	failedAddons, err := enableAddonsByOrder("%s", addons, true)
+	failed := false
+	if len(failedAddons) != 0 {
+		os.WriteFile("/root/failed-addons", []byte(fmt.Sprint(failedAddons)), 0644)
+		failed = true
+	}
+	expAddons, err := calculateAddonsNameFromRepoUrl(experimentalRepoURL)
+	if err != nil {
+		return err
+	}
+	failedAddons, _ = enableAddonsByOrder("%s", expAddons, true)
+	if len(failedAddons) != 0 {
+		os.WriteFile("/root/failed-exp-addons", []byte(fmt.Sprint(failedAddons)), 0644)
+		failed = true
+	}
+	if failed {
+		return fmt.Errorf("failed to loop check addons")
+	}
+	return nil
+}
+
+func calculateAddonsNameFromRepoUrl(url string) ([]string, error) {
+	index := repo.IndexFile{}
+	body, err := http.Get(url + "/index.yaml")
+	if err != nil {
+		fmt.Println(err)
+		return nil, fmt.Errorf("failed to fetch index.yaml from %s", url)
+	}
+	if body.StatusCode != 200 {
+		return nil, fmt.Errorf("fetch idnex.yaml meeting not 200 http code")
+	}
+	indexByte, err := ioutil.ReadAll(body.Body)
+	if err != nil || len(indexByte) == 0 {
+		fmt.Println(err)
+		return nil, fmt.Errorf("failed to ready index bytes")
+	}
+	err = yaml.UnmarshalStrict(indexByte, &index)
+	if err != nil {
+		return nil, fmt.Errorf("faled to unmarshall index struct")
+	}
+	var addons []string
+	for addon, _ := range index.Entries {
+		addons = append(addons, addon)
+	}
+	return addons, nil
+}
+
+func MergeSlice(right bool, source []string, target []string) []string {
+	if len(source) == 0 {
+		return target
+	}
+	if len(target) == 0 {
+		return source
+	}
+	var smap = make(map[string]bool, len(source))
+	for _, s := range source {
+		smap[s] = true
+	}
+	for _, t := range target {
+		if !smap[t] {
+			if right {
+				source = append(source, t)
+			} else {
+				source = append([]string{t}, source...)
+			}
+		}
+	}
+	return source
 }

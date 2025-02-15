@@ -1,15 +1,15 @@
 kustomize: {
 	attributes: workload: type: "autodetects.core.oam.dev"
-	description: "kustomize can fetching, building, updating and applying Kustomize manifests from git repo."
+	description: "kustomize can fetching, building, updating and applying Kustomize manifests from Git repo or Bucket or OCI repo."
 	type:        "component"
 	annotations: {
-		 "addon.oam.dev/ignore-without-component": "fluxcd-kustomize-controller"
-   }
+		"addon.oam.dev/ignore-without-component": "fluxcd-kustomize-controller"
+	}
 }
 
 template: {
 	output: {
-		apiVersion: "kustomize.toolkit.fluxcd.io/v1beta2"
+		apiVersion: "kustomize.toolkit.fluxcd.io/v1"
 		kind:       "Kustomization"
 		metadata: {
 			name:      context.name
@@ -24,8 +24,24 @@ template: {
 				if parameter.repoType == "oss" {
 					kind: "Bucket"
 				}
-				name:      context.name
+				if parameter.repoType == "oci" {
+					kind: "OCIRepository"
+				}
+				if parameter.sourceName == _|_ {
+					name: context.name
+				}
+				if parameter.sourceName != _|_ {
+					name: parameter.sourceName
+				}
 				namespace: context.namespace
+			}
+			if parameter.decryption != _|_ {
+				decryption: {
+					provider: parameter.decryption.provider
+					secretRef: {
+						name: parameter.decryption.secretRef.name
+					}
+				}
 			}
 			path:    parameter.path
 			suspend: parameter.suspend
@@ -38,49 +54,77 @@ template: {
 	}
 
 	outputs: {
-		repo: {
-			apiVersion: "source.toolkit.fluxcd.io/v1beta2"
-			metadata: {
-				name:      context.name
-				namespace: context.namespace
-			}
-			if parameter.repoType == "git" {
-				kind: "GitRepository"
-				spec: {
-					url: parameter.url
-					if parameter.git.branch != _|_ {
-						ref: branch: parameter.git.branch
-					}
-					if parameter.git.provider != _|_ {
-						if parameter.git.provider == "GitHub" {
-							gitImplementation: "go-git"
-						}
-						if parameter.git.provider == "AzureDevOps" {
-							gitImplementation: "libgit2"
-						}
-					}
-					_secret
-					_sourceCommonArgs
+		if parameter.sourceName == _|_ {
+			repo: {
+				metadata: {
+					name:      context.name
+					namespace: context.namespace
 				}
-			}
-			if parameter.repoType == "oss" {
-				kind: "Bucket"
-				spec: {
-					endpoint:   parameter.url
-					bucketName: parameter.oss.bucketName
-					provider:   parameter.oss.provider
-					if parameter.oss.region != _|_ {
-						region: parameter.oss.region
+				if parameter.repoType == "git" {
+					apiVersion: "source.toolkit.fluxcd.io/v1"
+					kind:       "GitRepository"
+					spec: {
+						url: parameter.url
+						if parameter.git.branch != _|_ {
+							ref: branch: parameter.git.branch
+						}
+						if parameter.git.commit != _|_ {
+							ref: commit: parameter.git.commit
+						}
+						if parameter.git.name != _|_ {
+							ref: name: parameter.git.name
+						}
+						if parameter.git.semver != _|_ {
+							ref: semver: parameter.git.semver
+						}
+						if parameter.git.tag != _|_ {
+							ref: tag: parameter.git.tag
+						}
+						_secret
+						_sourceCommonArgs
 					}
-					_secret
-					_sourceCommonArgs
+				}
+				if parameter.repoType == "oss" {
+					apiVersion: "source.toolkit.fluxcd.io/v1beta2"
+					kind:       "Bucket"
+					spec: {
+						endpoint:   parameter.url
+						bucketName: parameter.oss.bucketName
+						provider:   parameter.oss.provider
+						if parameter.oss.region != _|_ {
+							region: parameter.oss.region
+						}
+						_secret
+						_sourceCommonArgs
+					}
+				}
+				if parameter.repoType == "oci" {
+					apiVersion: "source.toolkit.fluxcd.io/v1beta2"
+					kind:       "OCIRepository"
+					spec: {
+						url: parameter.url
+						if parameter.oci.provider != _|_ {
+							provider: parameter.oci.provider
+						}
+						if parameter.oci.tag != _|_ {
+							ref: tag: parameter.oci.tag
+						}
+						if parameter.oci.semver != _|_ {
+							ref: semver: parameter.oci.semver
+						}
+						if parameter.oci.digest != _|_ {
+							ref: digest: parameter.oci.digest
+						}
+						_secret
+						_sourceCommonArgs
+					}
 				}
 			}
 		}
 
 		if parameter.imageRepository != _|_ {
 			imageRepo: {
-				apiVersion: "image.toolkit.fluxcd.io/v1beta1"
+				apiVersion: "image.toolkit.fluxcd.io/v1beta2"
 				kind:       "ImageRepository"
 				metadata: {
 					name:      context.name
@@ -88,7 +132,7 @@ template: {
 				}
 				spec: {
 					image:    parameter.imageRepository.image
-					interval: parameter.pullInterval
+					interval: parameter.imageRepository.interval
 					if parameter.imageRepository.secretRef != _|_ {
 						secretRef: name: parameter.imageRepository.secretRef
 					}
@@ -96,7 +140,7 @@ template: {
 			}
 
 			imagePolicy: {
-				apiVersion: "image.toolkit.fluxcd.io/v1beta1"
+				apiVersion: "image.toolkit.fluxcd.io/v1beta2"
 				kind:       "ImagePolicy"
 				metadata: {
 					name:      context.name
@@ -119,10 +163,15 @@ template: {
 					namespace: context.namespace
 				}
 				spec: {
-					interval: parameter.pullInterval
+					interval: parameter.imageRepository.interval
 					sourceRef: {
 						kind: "GitRepository"
-						name: context.name
+						if parameter.sourceName == _|_ {
+							name: context.name
+						}
+						if parameter.sourceName != _|_ {
+							name: parameter.sourceName
+						}
 					}
 					git: {
 						checkout: ref: branch: parameter.git.branch
@@ -164,7 +213,7 @@ template: {
 		}
 	}
 	parameter: {
-		repoType: *"git" | "oss"
+		repoType: *"git" | "oss" | "oci"
 		// +usage=The image repository for automatically update image to git
 		imageRepository?: {
 			// +usage=The image url
@@ -200,20 +249,39 @@ template: {
 			}
 			// +usage=The image url
 			commitMessage?: string
+			// +uasge=Interval is the length of time to wait between scans of the image repository.
+			interval: *"5m" | string
 		}
 		// +usage=The interval at which to check for repository/bucket and release updates, default to 5m
 		pullInterval: *"5m" | string
-		// +usage=The Git or Helm repository URL, OSS endpoint, accept HTTP/S or SSH address as git url,
+		// +usage=The Git or Helm repository URL, OSS endpoint or OCI repo, accept HTTP/S or SSH address as git url
 		url: string
 		// +usage=The name of the secret containing authentication credentials
 		secretRef?: string
 		// +usage=The timeout for operations like download index/clone repository, optional
 		timeout?: string
+		// +usage=The name of the source already existed
+		sourceName?: string
+
+		decryption?: {
+			// +usage=Determines which decrypt method to use. Defaults to sops
+			provider: string
+			secretRef: {
+				// +usage=Decrypt secretRef to use
+				name: string
+			}
+		}
 		git?: {
-			// +usage=The Git reference to checkout and monitor for changes, defaults to master branch
-			branch: string
-			// +usage=Determines which git client library to use. Defaults to GitHub, it will pick go-git. AzureDevOps will pick libgit2.
-			provider?: *"GitHub" | "AzureDevOps"
+			// +usage=The Git branch to checkout and monitor for changes, defaults to main branch
+			branch?: *"main" | string
+			// +usage=The Git commit to checkout and monitor for changes, takes precedence over all reference fields
+			commit?: string
+			// +usage=The Git reference name to checkout and monitor for changes, takes precendence over branch, tag and semver
+			name?: string
+			// +usage=Semver tag expression to checkout and monitor for changes, takes precedence over tag
+			semver?: string
+			// +usage=The Git tag to checkout and monitor for changes, takes precedence over branch
+			tag?: string
 		}
 		oss?: {
 			// +usage=The bucket's name, required if repoType is oss
@@ -222,6 +290,16 @@ template: {
 			provider: *"generic" | "aws"
 			// +usage=The bucket region, optional
 			region?: string
+		}
+		oci?: {
+			// +usage=The OIDC provider used for authentication purposes.The generic provider can be used for public repositories or when static credentials are used for authentication, either with spec.secretRef or spec.serviceAccountName
+			provider: *"generic" | "azure" | "aws" | "gcp"
+			// +usage=The image tag
+			tag?: string
+			// +usage=The image digest, takes precedence over all fields.
+			digest?: string
+			// +usage=Semver tag expression to checkout and monitor for changes, takes precedence over tag
+			semver?: string
 		}
 		//+usage=Path to the directory containing the kustomization.yaml file, or the set of plain YAMLs a kustomization.yaml should be generated for.
 		path: string

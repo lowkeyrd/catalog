@@ -8,7 +8,7 @@ import "strings"
     labels: {}
     description: "Add filesystem-mounted values from Azure KeyVault, using Azure key vault provider for secrets store csi driver which must be installed separately, see https://azure.github.io/secrets-store-csi-driver-provider-azure/docs/getting-started/installation/"
     attributes: {
-        appliesToWorkloads: ["deployments.apps"]
+        appliesToWorkloads: ["deployments.apps","cronjobs.batch","statefulsets.apps"]
         podDisruptive: true
     }
 }
@@ -16,32 +16,49 @@ import "strings"
 template: {
     kvObjects: [
         for v in parameter.keys {
-            "  objectName: " + v.name + "\n" + "  objectType: " + v.type
+            let object= "  objectName: " + v.name + "\n  objectType: " + v.type
+            {
+              if v.alias != _|_ { object +"\n  objectAlias: " + v.alias }
+              if v.alias == _|_ { object }
+            }
         },
     ]
 
     kvObjectsString: "array:\n- |\n" + strings.Join(kvObjects,"\n- |\n")
 
-    patch: spec: template: spec: {
-        // +patchKey=name
-        volumes: [{
-          name: "secrets-store",
-          csi: {
-            driver: "secrets-store.csi.k8s.io",
-            readOnly: true,
-            volumeAttributes: {
-              secretProviderClass: context.name
+    let patchContent={
+        template: {
+            spec: {
+                // +patchKey=name
+                volumes: [{
+                  name: "secrets-store",
+                  csi: {
+                    driver: "secrets-store.csi.k8s.io",
+                    readOnly: true,
+                    volumeAttributes: {
+                      secretProviderClass: context.name
+                    }
+                  }
+                },]
+                containers: [{
+                  // +patchKey=name
+                  volumeMounts: [{
+                    mountPath: "/mnt/secrets-store",
+                    name: "secrets-store",
+                    readOnly: true
+                  },]
+                },]
             }
-          }
-        },]
-        containers: [{
-          // +patchKey=name
-          volumeMounts: [{
-            mountPath: "/mnt/secrets-store",
-            name: "secrets-store",
-            readOnly: true
-          },]
-        },]
+        }
+    }
+
+    patch: {
+        if context.output.spec.template != _|_ {
+            spec: patchContent
+        }
+        if context.output.spec.jobTemplate != _|_ {
+            spec: jobTemplate: spec: patchContent
+        }
     }
 
     outputs: {
@@ -73,6 +90,8 @@ template: {
         name: string
         // +usage="secret" (default).  Or "key" or "cert" if key contains a certificate - see https://azure.github.io/secrets-store-csi-driver-provider-azure/docs/configurations/getting-certs-and-keys/#how-to-obtain-the-certificate
         type: *"secret" | "key" | "cert"
+        // +usage=changed name to use for mounted secret file, if omitted, will be value of name
+        alias?: string
       }]
       // +usage=The Azure KeyVault to connect to
       keyvaultName:           string

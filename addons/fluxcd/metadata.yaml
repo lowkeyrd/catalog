@@ -1,13 +1,14 @@
 name: fluxcd
-version: 2.1.2
+version: 3.0.1
 description: Extended workload to do continuous and progressive delivery
 icon: https://raw.githubusercontent.com/cncf/artwork/master/projects/flux/horizontal/color/flux-horizontal-color.png
 url: https://fluxcd.io
 
 tags:
+  - Official
   - Extended Workload
   - GitOps
   - Helm
 
 system:
-  vela: ">=v1.6.0-alpha.6"
+  vela: ">=1.9.0-alpha.2"
